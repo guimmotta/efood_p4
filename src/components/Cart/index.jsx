@@ -32,12 +32,55 @@ const formatPrice = (price) => {
   }).format(price)
 }
 
+const onlyNumbers = (value) => value.replace(/\D/g, '')
+
+const formatZipCode = (value) => {
+  const numbers = onlyNumbers(value).slice(0, 8)
+
+  if (numbers.length > 5) {
+    return `${numbers.slice(0, 5)}-${numbers.slice(5)}`
+  }
+
+  return numbers
+}
+
+const formatPhone = (value) => {
+  const numbers = onlyNumbers(value).slice(0, 11)
+
+  if (numbers.length > 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`
+  }
+
+  if (numbers.length > 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`
+  }
+
+  if (numbers.length > 2) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`
+  }
+
+  if (numbers.length > 0) {
+    return `(${numbers}`
+  }
+
+  return numbers
+}
+
+const numericFields = {
+  zipCode: 8,
+  phone: 11,
+  cardNumber: 16,
+  code: 3,
+  month: 2,
+  year: 4
+}
+
 const initialDelivery = {
   receiver: '',
   address: '',
   city: '',
   zipCode: '',
-  number: '',
+  phone: '',
   complement: ''
 }
 
@@ -68,23 +111,60 @@ const Cart = () => {
 
   const handleDeliveryChange = (event) => {
     const { name, value } = event.target
+
+    let nextValue = value
+
+    if (name === 'zipCode') {
+      nextValue = formatZipCode(value)
+    }
+
+    if (name === 'phone') {
+      nextValue = formatPhone(value)
+    }
+
     setDelivery((currentState) => ({
       ...currentState,
-      [name]: value
+      [name]: nextValue
     }))
   }
 
   const handlePaymentChange = (event) => {
     const { name, value } = event.target
+
+    let nextValue = value
+
+    if (name === 'number') {
+      nextValue = onlyNumbers(value).slice(0, numericFields.cardNumber)
+    }
+
+    if (['code', 'month', 'year'].includes(name)) {
+      nextValue = onlyNumbers(value).slice(0, numericFields[name])
+    }
+
     setPayment((currentState) => ({
       ...currentState,
-      [name]: value
+      [name]: nextValue
     }))
   }
 
   const handleDeliverySubmit = (event) => {
     event.preventDefault()
     setError('')
+
+    const zipCodeNumbers = onlyNumbers(delivery.zipCode)
+
+    if (zipCodeNumbers.length !== numericFields.zipCode) {
+      setError('Informe um CEP válido com 8 números.')
+      return
+    }
+
+    const phoneNumbers = onlyNumbers(delivery.phone)
+
+    if (![10, numericFields.phone].includes(phoneNumbers.length)) {
+      setError('Informe um telefone válido com DDD.')
+      return
+    }
+
     setStep('payment')
   }
 
@@ -92,6 +172,35 @@ const Cart = () => {
     event.preventDefault()
     setError('')
     setIsSubmitting(true)
+
+    const cardNumber = onlyNumbers(payment.number)
+    const cardCode = onlyNumbers(payment.code)
+    const expirationMonth = Number(payment.month)
+    const expirationYear = onlyNumbers(payment.year)
+
+    if (cardNumber.length !== numericFields.cardNumber) {
+      setError('Informe o número do cartão com 16 números.')
+      setIsSubmitting(false)
+      return
+    }
+
+    if (cardCode.length !== numericFields.code) {
+      setError('Informe o CVV com 3 números.')
+      setIsSubmitting(false)
+      return
+    }
+
+    if (expirationMonth < 1 || expirationMonth > 12 || payment.month.length !== numericFields.month) {
+      setError('Informe um mês de vencimento válido com 2 números.')
+      setIsSubmitting(false)
+      return
+    }
+
+    if (expirationYear.length !== numericFields.year) {
+      setError('Informe o ano de vencimento com 4 números.')
+      setIsSubmitting(false)
+      return
+    }
 
     const payload = {
       products: items.map((item) => ({
@@ -103,19 +212,20 @@ const Cart = () => {
         address: {
           description: delivery.address,
           city: delivery.city,
-          zipCode: delivery.zipCode,
-          number: Number(delivery.number),
-          complement: delivery.complement
+          zipCode: onlyNumbers(delivery.zipCode),
+          number: Number(onlyNumbers(delivery.phone)),
+          complement: delivery.complement,
+          phone: onlyNumbers(delivery.phone)
         }
       },
       payment: {
         card: {
           name: payment.name,
-          number: payment.number,
-          code: Number(payment.code),
+          number: cardNumber,
+          code: Number(cardCode),
           expires: {
-            month: Number(payment.month),
-            year: Number(payment.year)
+            month: expirationMonth,
+            year: Number(expirationYear)
           }
         }
       }
@@ -245,18 +355,27 @@ const Cart = () => {
                     name="zipCode"
                     value={delivery.zipCode}
                     onChange={handleDeliveryChange}
+                    inputMode="numeric"
+                    maxLength="9"
+                    pattern="\d{5}-?\d{3}"
+                    placeholder="00000-000"
+                    title="Digite um CEP válido com 8 números"
                     required
                   />
                 </FormGroup>
 
                 <FormGroup>
-                  <Label htmlFor="number">Número</Label>
+                  <Label htmlFor="phone">Telefone</Label>
                   <Input
-                    id="number"
-                    name="number"
-                    type="number"
-                    value={delivery.number}
+                    id="phone"
+                    name="phone"
+                    value={delivery.phone}
                     onChange={handleDeliveryChange}
+                    inputMode="numeric"
+                    maxLength="15"
+                    pattern="\(\d{2}\) \d{4,5}-\d{4}"
+                    placeholder="(00) 00000-0000"
+                    title="Digite um telefone válido com DDD"
                     required
                   />
                 </FormGroup>
@@ -271,6 +390,8 @@ const Cart = () => {
                   onChange={handleDeliveryChange}
                 />
               </FormGroup>
+
+              {error && <ErrorText>{error}</ErrorText>}
 
               <ButtonGroup>
                 <CheckoutButton type="submit">Continuar com o pagamento</CheckoutButton>
@@ -300,12 +421,17 @@ const Cart = () => {
 
               <FormRow>
                 <FormGroup>
-                  <Label htmlFor="number">Número do cartão</Label>
+                  <Label htmlFor="cardNumber">Número do cartão</Label>
                   <Input
-                    id="number"
+                    id="cardNumber"
                     name="number"
                     value={payment.number}
                     onChange={handlePaymentChange}
+                    inputMode="numeric"
+                    maxLength="16"
+                    pattern="\d{16}"
+                    placeholder="0000000000000000"
+                    title="Digite os 16 números do cartão"
                     required
                   />
                 </FormGroup>
@@ -317,6 +443,10 @@ const Cart = () => {
                     name="code"
                     value={payment.code}
                     onChange={handlePaymentChange}
+                    inputMode="numeric"
+                    maxLength="3"
+                    pattern="\d{3}"
+                    title="Digite os 3 números do CVV"
                     required
                   />
                 </FormGroup>
@@ -328,11 +458,13 @@ const Cart = () => {
                   <Input
                     id="month"
                     name="month"
-                    type="number"
-                    min="1"
-                    max="12"
                     value={payment.month}
                     onChange={handlePaymentChange}
+                    inputMode="numeric"
+                    maxLength="2"
+                    pattern="0[1-9]|1[0-2]"
+                    placeholder="MM"
+                    title="Digite um mês válido entre 01 e 12"
                     required
                   />
                 </FormGroup>
@@ -342,9 +474,13 @@ const Cart = () => {
                   <Input
                     id="year"
                     name="year"
-                    type="number"
                     value={payment.year}
                     onChange={handlePaymentChange}
+                    inputMode="numeric"
+                    maxLength="4"
+                    pattern="\d{4}"
+                    placeholder="AAAA"
+                    title="Digite o ano com 4 números"
                     required
                   />
                 </FormGroup>
